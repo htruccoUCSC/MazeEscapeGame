@@ -42,6 +42,12 @@ public class Enemy : MonoBehaviour
     // track active disable coroutine so repeated calls reset timing
     Coroutine _particleDisableCoroutine;
 
+    // ensure we don't schedule multiple enable coroutines while seeing player continuously
+    bool _particleEnableScheduled = false;
+
+    // track whether the first chase has completed so we only switch to random patrolling afterwards
+    bool _hasDoneFirstChase = false;
+
     void Start()
     {
         _agent = GetComponent<NavMeshAgent>();
@@ -73,8 +79,16 @@ public class Enemy : MonoBehaviour
         if (alertParticleObject != null)
             alertParticleObject.SetActive(false);
 
-        // Start patrolling immediately
-        PickNextWaypoint();
+        // Start the game by immediately chasing the player (first chase).
+        if (player != null)
+        {
+            _state = State.Chasing;
+            _agent.SetDestination(player.position);
+        }
+        else
+        {
+            PickNextWaypoint();
+        }
     }
 
     void Update()
@@ -123,26 +137,29 @@ public class Enemy : MonoBehaviour
                 // Player seen
                 _lastSeenTime = Time.time;
 
-                // If transitioning into chasing, play alert and start particle sequence (delayed)
+                // trigger first-time cinematic (rotation + delayed particle) regardless of current state
+                if (!_cinematicTriggered)
+                {
+                    _cinematicTriggered = true;
+                    if (_cinematicCoroutine != null)
+                        StopCoroutine(_cinematicCoroutine);
+                    _cinematicCoroutine = StartCoroutine(RotatePlayerThenEnableParticle());
+                }
+                else
+                {
+                    // subsequent sightings: schedule particle enable after particleDelay, but avoid stacking
+                    if (!_particleEnableScheduled)
+                    {
+                        _particleEnableScheduled = true;
+                        StartCoroutine(EnableParticleDelayedInternal());
+                    }
+                }
+
+                // Enter chasing if not already
                 if (_state != State.Chasing)
                 {
                     _state = State.Chasing;
                     _oneShotSource.PlayOneShot(alertClip);
-
-                    // First sight ever: rotate the entire player then spawn particle after particleDelay.
-                    // Later sightings: do not rotate player, but still spawn the particle after particleDelay.
-                    if (!_cinematicTriggered)
-                    {
-                        _cinematicTriggered = true;
-                        if (_cinematicCoroutine != null)
-                            StopCoroutine(_cinematicCoroutine);
-                        _cinematicCoroutine = StartCoroutine(RotatePlayerThenEnableParticle());
-                    }
-                    else
-                    {
-                        // Subsequent sightings — enable particle after particleDelay (no rotation)
-                        StartCoroutine(EnableParticleDelayed());
-                    }
                 }
             }
         }
@@ -167,6 +184,9 @@ public class Enemy : MonoBehaviour
         if (player == null)
         {
             // No player to chase; return to patrol
+            if (!_hasDoneFirstChase)
+                _hasDoneFirstChase = true;
+
             _state = State.Patrolling;
             PickNextWaypoint();
             return;
@@ -178,6 +198,11 @@ public class Enemy : MonoBehaviour
         if (Vector3.Distance(transform.position, player.position) <= attackDistance)
         {
             Destroy(player.gameObject);
+
+            // Mark first chase done and switch to patrol
+            if (!_hasDoneFirstChase)
+                _hasDoneFirstChase = true;
+
             _agent.ResetPath();
             _state = State.Patrolling;
             PickNextWaypoint();
@@ -187,6 +212,10 @@ public class Enemy : MonoBehaviour
         // If we haven't seen player for loseSightDelay seconds, give up and patrol
         if (Time.time - _lastSeenTime > loseSightDelay)
         {
+            // Mark first chase done after the first chase attempt completes (lost sight)
+            if (!_hasDoneFirstChase)
+                _hasDoneFirstChase = true;
+
             _state = State.Patrolling;
             PickNextWaypoint();
         }
@@ -270,13 +299,16 @@ public class Enemy : MonoBehaviour
 
         EnableParticleObject();
 
+        // allow scheduling again
+        _particleEnableScheduled = false;
         _cinematicCoroutine = null;
     }
 
-    IEnumerator EnableParticleDelayed()
+    IEnumerator EnableParticleDelayedInternal()
     {
         yield return new WaitForSeconds(particleDelay);
         EnableParticleObject();
+        _particleEnableScheduled = false;
     }
 
     void EnableParticleObject()
