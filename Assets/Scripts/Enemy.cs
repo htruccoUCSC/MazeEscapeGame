@@ -48,7 +48,7 @@ public class Enemy : MonoBehaviour
     // track whether the first chase has completed so we only switch to random patrolling afterwards
     bool _hasDoneFirstChase = false;
 
-    // new: active initial-chase flag — while true the enemy relentlessly chases the player until reach
+    // new: active initial-chase flag ï¿½ while true the enemy relentlessly chases the player until reach
     bool _initialChaseActive = false;
 
     void Start()
@@ -66,6 +66,7 @@ public class Enemy : MonoBehaviour
         _oneShotSource = gameObject.AddComponent<AudioSource>();
         _oneShotSource.playOnAwake = false;
         _oneShotSource.loop = false;
+        _oneShotSource.spatialBlend = 1f; // Ensure alertClip is fully 3D spatialized
 
         // Safety checks
         if (player == null)
@@ -145,6 +146,7 @@ public class Enemy : MonoBehaviour
                 if (!_cinematicTriggered)
                 {
                     _cinematicTriggered = true;
+                    _oneShotSource.PlayOneShot(alertClip);
                     if (_cinematicCoroutine != null)
                         StopCoroutine(_cinematicCoroutine);
                     _cinematicCoroutine = StartCoroutine(RotatePlayerThenEnableParticle());
@@ -198,7 +200,7 @@ public class Enemy : MonoBehaviour
         }
 
         // Always update destination to player's current position.
-        // If this is the initial chase, do NOT give up even if player goes out of sight — relentlessly pursue.
+        // If this is the initial chase, do NOT give up even if player goes out of sight ï¿½ relentlessly pursue.
         _agent.SetDestination(player.position);
 
         // If close enough to player, destroy them

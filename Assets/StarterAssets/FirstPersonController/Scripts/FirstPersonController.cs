@@ -16,6 +16,10 @@ namespace StarterAssets
 		public float MoveSpeed = 4.0f;
 		[Tooltip("Sprint speed of the character in m/s")]
 		public float SprintSpeed = 6.0f;
+		[Tooltip("Maximum continuous sprint time in seconds")]
+		public float MaxSprintTime = 10.0f;
+		[Tooltip("Time in seconds it takes to fully recharge sprint from 0 to MaxSprintTime")]
+		public float SprintRechargeTime = 5.0f;
 		[Tooltip("Rotation speed of the character")]
 		public float RotationSpeed = 1.0f;
 		[Tooltip("Acceleration and deceleration")]
@@ -57,6 +61,14 @@ namespace StarterAssets
 		// player
 		private float _speed;
 		private float _rotationVelocity;
+		// sprint stamina (seconds remaining)
+		private float _sprintRemaining;
+		// sprint toggle state and previous raw input for edge detection
+		private bool _sprintToggled = false;
+		private bool _prevSprintInput = false;
+
+		// public read-only normalized sprint (0..1) for UI binding
+		public float SprintRemainingNormalized => Mathf.Clamp01(_sprintRemaining / Mathf.Max(0.0001f, MaxSprintTime));
 		private float _verticalVelocity;
 		private float _terminalVelocity = 53.0f;
 
@@ -108,6 +120,9 @@ namespace StarterAssets
 			// reset our timeouts on start
 			_jumpTimeoutDelta = JumpTimeout;
 			_fallTimeoutDelta = FallTimeout;
+
+			// initialize sprint stamina
+			_sprintRemaining = MaxSprintTime;
 		}
 
 		private void Update()
@@ -154,13 +169,46 @@ namespace StarterAssets
 		private void Move()
 		{
 			// set target speed based on move speed, sprint speed and if sprint is pressed
-			float targetSpeed = _input.sprint ? SprintSpeed : MoveSpeed;
+			// detect sprint input rising edge to toggle sprint mode
+			if (_input.sprint && !_prevSprintInput)
+			{
+				// flip toggle
+				_sprintToggled = !_sprintToggled;
+			}
+			_prevSprintInput = _input.sprint;
+
+			// sprint is only allowed when toggled, player is moving, and there's stamina
+			bool tryingToSprint = _sprintToggled && _input.move != Vector2.zero && _sprintRemaining > 0f;
+			float targetSpeed = tryingToSprint ? SprintSpeed : MoveSpeed;
 
 			// a simplistic acceleration and deceleration designed to be easy to remove, replace, or iterate upon
 
 			// note: Vector2's == operator uses approximation so is not floating point error prone, and is cheaper than magnitude
 			// if there is no input, set the target speed to 0
 			if (_input.move == Vector2.zero) targetSpeed = 0.0f;
+
+			// handle sprint stamina: drain when sprinting and moving, recharge when not
+			if (tryingToSprint)
+			{
+				// drain stamina according to real time
+				_sprintRemaining = Mathf.Max(0f, _sprintRemaining - Time.deltaTime);
+				// if stamina reached 0, fall back to walk speed next frame
+				if (_sprintRemaining <= 0f)
+				{
+					targetSpeed = MoveSpeed;
+					// disable toggle when out of stamina
+					_sprintToggled = false;
+				}
+			}
+			else
+			{
+				// recharge stamina over SprintRechargeTime seconds
+				if (_sprintRemaining < MaxSprintTime)
+				{
+					float rechargeRate = (MaxSprintTime / Mathf.Max(0.0001f, SprintRechargeTime)) * 0.5f; // halve recharge speed
+					_sprintRemaining = Mathf.Min(MaxSprintTime, _sprintRemaining + rechargeRate * Time.deltaTime);
+				}
+			}
 
 			// a reference to the players current horizontal velocity
 			float currentHorizontalSpeed = new Vector3(_controller.velocity.x, 0.0f, _controller.velocity.z).magnitude;
