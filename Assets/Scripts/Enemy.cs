@@ -48,6 +48,9 @@ public class Enemy : MonoBehaviour
     // track whether the first chase has completed so we only switch to random patrolling afterwards
     bool _hasDoneFirstChase = false;
 
+    // new: active initial-chase flag — while true the enemy relentlessly chases the player until reach
+    bool _initialChaseActive = false;
+
     void Start()
     {
         _agent = GetComponent<NavMeshAgent>();
@@ -83,7 +86,8 @@ public class Enemy : MonoBehaviour
         if (player != null)
         {
             _state = State.Chasing;
-            _agent.SetDestination(player.position);
+            _initialChaseActive = true;                   // important: mark initial chase active
+            _agent.SetDestination(player.position);       // Set destination to the player
         }
         else
         {
@@ -187,11 +191,14 @@ public class Enemy : MonoBehaviour
             if (!_hasDoneFirstChase)
                 _hasDoneFirstChase = true;
 
+            _initialChaseActive = false;
             _state = State.Patrolling;
             PickNextWaypoint();
             return;
         }
 
+        // Always update destination to player's current position.
+        // If this is the initial chase, do NOT give up even if player goes out of sight — relentlessly pursue.
         _agent.SetDestination(player.position);
 
         // If close enough to player, destroy them
@@ -203,6 +210,7 @@ public class Enemy : MonoBehaviour
             if (!_hasDoneFirstChase)
                 _hasDoneFirstChase = true;
 
+            _initialChaseActive = false;
             _agent.ResetPath();
             _state = State.Patrolling;
             PickNextWaypoint();
@@ -210,7 +218,8 @@ public class Enemy : MonoBehaviour
         }
 
         // If we haven't seen player for loseSightDelay seconds, give up and patrol
-        if (Time.time - _lastSeenTime > loseSightDelay)
+        // But DO NOT give up when the initial chase is active
+        if (!_initialChaseActive && Time.time - _lastSeenTime > loseSightDelay)
         {
             // Mark first chase done after the first chase attempt completes (lost sight)
             if (!_hasDoneFirstChase)
@@ -351,6 +360,12 @@ public class Enemy : MonoBehaviour
         if (alertParticleObject != null)
             alertParticleObject.SetActive(false);
         _particleDisableCoroutine = null;
+
+        // After particles stop, always return to waypoint navigation
+        _initialChaseActive = false;
+        _hasDoneFirstChase = true;
+        _state = State.Patrolling;
+        PickNextWaypoint();
     }
 
     void OnDrawGizmosSelected()
