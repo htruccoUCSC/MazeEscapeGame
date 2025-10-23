@@ -1,4 +1,3 @@
-
 using System.Collections;
 using UnityEngine;
 using UnityEngine.AI;
@@ -227,12 +226,13 @@ public class Enemy : MonoBehaviour
         // Rotate the whole player to face the enemy (first sight cinematic).
         if (player != null)
         {
-            Vector3 lookTarget = transform.position + Vector3.up * 1f;
+            Vector3 lookTarget = transform.position;
             Vector3 dir = (lookTarget - player.position);
             if (dir.sqrMagnitude > 0.0001f)
             {
+                // Calculate the target rotation only on the Y-axis
                 Quaternion startRot = player.rotation;
-                Quaternion targetRotation = Quaternion.LookRotation(dir.normalized, Vector3.up);
+                Quaternion targetRotation = Quaternion.Euler(0, Quaternion.LookRotation(dir.normalized, Vector3.up).eulerAngles.y, 0);
 
                 float elapsed = 0f;
                 while (elapsed < focusDuration)
